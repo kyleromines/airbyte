@@ -29,8 +29,10 @@ import io.airbyte.cdk.load.toolkits.iceberg.parquet.IcebergTableSynchronizer
 import io.airbyte.cdk.load.toolkits.iceberg.parquet.IcebergTypesComparator
 import io.airbyte.cdk.load.toolkits.iceberg.parquet.io.IcebergTableWriterFactory
 import io.airbyte.cdk.load.toolkits.iceberg.parquet.io.IcebergUtil
+import io.airbyte.cdk.load.write.StreamStateStore
 import io.airbyte.integrations.destination.s3_data_lake.io.S3DataLakeUtil
 import io.mockk.every
+import io.mockk.impl.annotations.MockK
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
@@ -45,9 +47,17 @@ import org.apache.iceberg.io.CloseableIterable
 import org.apache.iceberg.types.Type.PrimitiveType
 import org.apache.iceberg.types.Types
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 internal class S3DataLakeStreamLoaderTest {
+    @MockK(relaxed = true)
+    private lateinit var streamStateStore: StreamStateStore<S3DataLakeStreamState>
+
+    @BeforeEach
+    fun setup() {
+        every { streamStateStore.put(any(), any()) } returns Unit
+    }
 
     @Test
     fun testCreateStreamLoader() {
@@ -157,6 +167,7 @@ internal class S3DataLakeStreamLoaderTest {
                 icebergUtil,
                 stagingBranchName = DEFAULT_STAGING_BRANCH,
                 mainBranchName = "main",
+                streamStateStore = streamStateStore,
             )
         assertNotNull(streamLoader)
     }
@@ -257,6 +268,7 @@ internal class S3DataLakeStreamLoaderTest {
                 icebergUtil,
                 stagingBranchName = DEFAULT_STAGING_BRANCH,
                 mainBranchName = "main",
+                streamStateStore = streamStateStore,
             )
         runBlocking { streamLoader.start() }
 
@@ -409,6 +421,7 @@ internal class S3DataLakeStreamLoaderTest {
                 icebergUtil,
                 stagingBranchName = DEFAULT_STAGING_BRANCH,
                 mainBranchName = "main",
+                streamStateStore = streamStateStore,
             )
         runBlocking { streamLoader.start() }
 
@@ -466,6 +479,7 @@ internal class S3DataLakeStreamLoaderTest {
                 icebergUtil,
                 stagingBranchName = DEFAULT_STAGING_BRANCH,
                 mainBranchName = "main",
+                streamStateStore = streamStateStore,
             )
 
         assertEquals(

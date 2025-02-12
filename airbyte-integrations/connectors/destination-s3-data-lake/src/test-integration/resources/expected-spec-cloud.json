@@ -153,6 +153,13 @@
         "always_show" : true,
         "order" : 7,
         "type" : "object"
+      },
+      "max_message_queue_memory_use_ratio" : {
+        "type" : "number"
+      },
+      "num_workers" : {
+        "type" : "integer",
+        "default" : 2
       }
     },
     "required" : [ "s3_bucket_name", "s3_bucket_region", "warehouse_location", "main_branch_name", "catalog_type" ]
