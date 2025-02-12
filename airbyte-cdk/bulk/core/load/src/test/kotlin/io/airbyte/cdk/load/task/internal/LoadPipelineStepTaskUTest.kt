@@ -4,6 +4,7 @@
 
 package io.airbyte.cdk.load.task.internal
 
+<<<<<<< HEAD
 import io.airbyte.cdk.load.command.DestinationStream
 import io.airbyte.cdk.load.message.Batch
 import io.airbyte.cdk.load.message.PipelineEndOfStream
@@ -55,10 +56,42 @@ class LoadPipelineStepTaskUTest {
         part: Int,
         batchAccumulator: BatchAccumulator<AutoCloseable, StreamKey, String, T>
     ): LoadPipelineStepTask<AutoCloseable, StreamKey, String, StreamKey, T> =
+=======
+import io.airbyte.cdk.load.message.PartitionedQueue
+import io.airbyte.cdk.load.message.PipelineEvent
+import io.airbyte.cdk.load.message.QueueWriter
+import io.airbyte.cdk.load.message.StreamKey
+import io.airbyte.cdk.load.pipeline.BatchAccumulator
+import io.airbyte.cdk.load.pipeline.BatchUpdate
+import io.airbyte.cdk.load.pipeline.OutputPartitioner
+import io.airbyte.cdk.load.pipeline.PipelineFlushStrategy
+import io.airbyte.cdk.load.state.Reserved
+import io.mockk.impl.annotations.MockK
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Test
+
+class LoadPipelineStepTaskUTest {
+    @MockK lateinit var batchAccumulator: BatchAccumulator<StreamKey, AutoCloseable, String, String>
+    @MockK lateinit var inputFlow: Flow<Reserved<PipelineEvent<StreamKey, String>>>
+    @MockK lateinit var batchUpdateQueue: QueueWriter<BatchUpdate>
+    @MockK lateinit var outputPartitioner: OutputPartitioner<StreamKey, String, StreamKey, String>
+    @MockK lateinit var outputQueue: PartitionedQueue<PipelineEvent<StreamKey, String>>
+    @MockK lateinit var flushStrategy: PipelineFlushStrategy
+
+    class Closeable : AutoCloseable {
+        override fun close() {}
+    }
+
+    private fun createTask(
+        part: Int
+    ): LoadPipelineStepTask<AutoCloseable, StreamKey, String, StreamKey, String> =
+>>>>>>> 71fc43ef2e5 (WIP: Load CDK: New Interfaces)
         LoadPipelineStepTask(
             batchAccumulator,
             inputFlow,
             batchUpdateQueue,
+<<<<<<< HEAD
             // TODO: test output partitioner, queue, and flush strategy when actually used
             null,
             null,
@@ -380,4 +413,13 @@ class LoadPipelineStepTaskUTest {
         coVerify(exactly = 1) { batchUpdateQueue.publish(expectedBatchUpdateStream1) }
         coVerify(exactly = 1) { batchUpdateQueue.publish(expectedBatchUpdateStream2) }
     }
+=======
+            outputPartitioner,
+            outputQueue,
+            flushStrategy,
+            part
+        )
+
+    @Test fun `start and accept called on first key`() = runTest {}
+>>>>>>> 71fc43ef2e5 (WIP: Load CDK: New Interfaces)
 }
