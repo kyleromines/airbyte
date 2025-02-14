@@ -14,6 +14,7 @@ from airbyte_cdk.models import ConfiguredAirbyteCatalog, FailureType, SyncMode
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
@@ -36,7 +37,7 @@ from source_stripe.streams import (
     UpdatedCursorIncrementalStripeStream,
     UpdatedCursorIncrementalStripeSubStream,
 )
-from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
+
 
 logger = logging.getLogger("airbyte")
 
@@ -234,7 +235,6 @@ class SourceStripe(YamlDeclarativeSource):
             **args,
         )
 
-
         subscription_items = UpdatedCursorIncrementalStripeLazySubStream(
             name="subscription_items",
             path="subscription_items",
@@ -251,7 +251,6 @@ class SourceStripe(YamlDeclarativeSource):
             **args,
         )
 
-
         streams = [
             UpdatedCursorIncrementalStripeSubStream(
                 name="persons",
@@ -261,7 +260,6 @@ class SourceStripe(YamlDeclarativeSource):
                 **args,
             ),
             SetupAttempts(**incremental_args),
-
             invoices,
             # ParentIncrementalStripeSubStream(
             #     name="payout_balance_transactions",

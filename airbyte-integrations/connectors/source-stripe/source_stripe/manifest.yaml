@@ -163,7 +163,7 @@ definitions:
           $parameters:
             request_parameters:
               types[]: '{{["account.external_account.created", "account.external_account.updated", "account.external_account.deleted"]}}'
-              object: 'bank_account'
+              object: "bank_account"
 
     external_account_cards:
       $ref: "#/definitions/updated_stream"
@@ -183,7 +183,7 @@ definitions:
           $parameters:
             request_parameters:
               types[]: '{{["account.external_account.created", "account.external_account.updated", "account.external_account.deleted"]}}'
-              object: 'card'
+              object: "card"
 
     accounts:
       $ref: "#/definitions/updated_stream"
@@ -212,7 +212,7 @@ definitions:
         full_data_retriever:
           $ref: "#/definitions/base_retriever"
           $parameters:
-            path:  "{{ 'application_fees/' + stream_slice['parent']['id'] + '/refunds'}}"
+            path: "{{ 'application_fees/' + stream_slice['parent']['id'] + '/refunds'}}"
         incremental_data_retriever:
           $ref: "#/definitions/events_objects_retriever"
           $parameters:
@@ -624,7 +624,6 @@ definitions:
             request_parameters:
               types[]: '{{["payout.canceled", "payout.created", "payout.failed", "payout.paid", "payout.reconciliation_completed", "payout.updated"]}}'
 
-
     subscriptions:
       $ref: "#/definitions/updated_stream"
       $parameters:
@@ -643,30 +642,29 @@ definitions:
               status: "all"
 
 streams:
-#  - $ref: "#/definitions/streams/charges"
-#  - $ref: "#/definitions/streams/plans"
-#  - $ref: "#/definitions/streams/products"
-#  - $ref: "#/definitions/streams/customers"
-#  - $ref: "#/definitions/streams/top_ups"
-#  - $ref: "#/definitions/streams/transactions"
-#  - $ref: "#/definitions/streams/cards"
-#  - $ref: "#/definitions/streams/promotion_codes"
-#  - $ref: "#/definitions/streams/payment_intents"
-#  - $ref: "#/definitions/streams/subscription_schedule"
-#  - $ref: "#/definitions/streams/reviews"
-#  - $ref: "#/definitions/streams/prices"
-#  - $ref: "#/definitions/streams/invoice_items"
-#  - $ref: "#/definitions/streams/payment_intents"
-#  - $ref: "#/definitions/streams/disputes"
-#  - $ref: "#/definitions/streams/coupons"
-#  - $ref: "#/definitions/streams/cardholders"
-#  - $ref: "#/definitions/streams/authorizations"
-#  - $ref: "#/definitions/streams/refunds"
+  #  - $ref: "#/definitions/streams/charges"
+  #  - $ref: "#/definitions/streams/plans"
+  #  - $ref: "#/definitions/streams/products"
+  #  - $ref: "#/definitions/streams/customers"
+  #  - $ref: "#/definitions/streams/top_ups"
+  #  - $ref: "#/definitions/streams/transactions"
+  #  - $ref: "#/definitions/streams/cards"
+  #  - $ref: "#/definitions/streams/promotion_codes"
+  #  - $ref: "#/definitions/streams/payment_intents"
+  #  - $ref: "#/definitions/streams/subscription_schedule"
+  #  - $ref: "#/definitions/streams/reviews"
+  #  - $ref: "#/definitions/streams/prices"
+  #  - $ref: "#/definitions/streams/invoice_items"
+  #  - $ref: "#/definitions/streams/payment_intents"
+  #  - $ref: "#/definitions/streams/disputes"
+  #  - $ref: "#/definitions/streams/coupons"
+  #  - $ref: "#/definitions/streams/cardholders"
+  #  - $ref: "#/definitions/streams/authorizations"
+  #  - $ref: "#/definitions/streams/refunds"
   - $ref: "#/definitions/streams/setup_intents"
   - $ref: "#/definitions/streams/external_account_cards"
   - $ref: "#/definitions/streams/external_account_bank_accounts"
 #  - $ref: "#/definitions/streams/events"
-
 
 spec:
   type: Spec
@@ -722,7 +720,7 @@ spec:
         title: Data request time increment in days
         default: 365
         minimum: 1
-        examples: [ 1, 3, 10, 30, 180, 360 ]
+        examples: [1, 3, 10, 30, 180, 360]
         description: >-
           The time increment used by the connector when requesting data from the Stripe API. The bigger the value is,
           the less requests will be made and faster the sync will be. On the other hand, the more seldom
@@ -734,7 +732,7 @@ spec:
         minimum: 1
         maximum: 20
         default: 10
-        examples: [ 1, 2, 3 ]
+        examples: [1, 2, 3]
         description: >-
           The number of worker thread to use for the sync.
           The performance upper boundary depends on call_rate_limit setting and type of account.
@@ -742,10 +740,8 @@ spec:
       call_rate_limit:
         type: integer
         title: Max number of API calls per second
-        examples: [ 25, 100 ]
+        examples: [25, 100]
         description: >-
           The number of API calls per second that you allow connector to make. This value can not be bigger than real
           API call rate limit (https://stripe.com/docs/rate-limits). If not specified the default maximum is 25 and 100
           calls per second for test and production tokens respectively.
-
-
