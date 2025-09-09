@@ -13,13 +13,18 @@ from enum import Enum
 from functools import cached_property
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, ClassVar, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 import dagger
 import requests  # type: ignore
 import semver
 import yaml  # type: ignore
 from dagger import Container, Directory
+
+# This slugify lib has to be consistent with the slugify lib used in live_tests
+# live_test can't resolve the passed connector container otherwise.
+from slugify import slugify  # type: ignore
+
 from pipelines import hacks, main_logger
 from pipelines.airbyte_ci.connectors.consts import CONNECTOR_TEST_STEP_ID
 from pipelines.airbyte_ci.connectors.context import ConnectorContext
@@ -33,10 +38,6 @@ from pipelines.models.artifacts import Artifact
 from pipelines.models.secrets import Secret
 from pipelines.models.steps import STEP_PARAMS, MountPath, Step, StepResult, StepStatus
 
-# This slugify lib has to be consistent with the slugify lib used in live_tests
-# live_test can't resolve the passed connector container otherwise.
-from slugify import slugify  # type: ignore
-
 GITHUB_URL_PREFIX_FOR_CONNECTORS = f"{AIRBYTE_GITHUBUSERCONTENT_URL_PREFIX}/master/airbyte-integrations/connectors"
 
 
@@ -44,7 +45,6 @@ class VersionCheck(Step, ABC):
     """A step to validate the connector version was bumped if files were modified"""
 
     context: ConnectorContext
-    failure_message: ClassVar
 
     @property
     def should_run(self) -> bool:
@@ -79,9 +79,8 @@ class VersionCheck(Step, ABC):
     def success_result(self) -> StepResult:
         return StepResult(step=self, status=StepStatus.SUCCESS)
 
-    @property
-    def failure_result(self) -> StepResult:
-        return StepResult(step=self, status=StepStatus.FAILURE, stderr=self.failure_message)
+    def _get_failure_result(self, failure_message: str) -> StepResult:
+        return StepResult(step=self, status=StepStatus.FAILURE, stderr=failure_message)
 
     @abstractmethod
     def validate(self) -> StepResult:
@@ -119,20 +118,60 @@ class VersionIncrementCheck(VersionCheck):
     ]
 
     @property
-    def failure_message(self) -> str:
-        return f"The dockerImageTag in {METADATA_FILE_NAME} was not incremented. The files you modified should lead to a version bump. Master version is {self.master_connector_version}, current version is {self.current_connector_version}"
-
-    @property
     def should_run(self) -> bool:
+        # Skip if connector opts out of version checks
+        if self.context.metadata and self.context.metadata.get("ab_internal", {}).get("requireVersionIncrementsInPullRequests") is False:
+            return False
+
         for filename in self.context.modified_files:
             relative_path = str(filename).replace(str(self.context.connector.code_directory) + "/", "")
             if not any([relative_path.startswith(to_bypass) for to_bypass in self.BYPASS_CHECK_FOR]):
                 return True
         return False
 
+    def is_version_not_incremented(self) -> bool:
+        return self.master_connector_version >= self.current_connector_version
+
+    def get_failure_message_for_no_increment(self) -> str:
+        return (
+            f"The dockerImageTag in {METADATA_FILE_NAME} was not incremented. "
+            f"Master version is {self.master_connector_version}, current version is {self.current_connector_version}"
+        )
+
+    def are_both_versions_release_candidates(self) -> bool:
+        return bool(
+            self.master_connector_version.prerelease
+            and self.current_connector_version.prerelease
+            and "rc" in self.master_connector_version.prerelease
+            and "rc" in self.current_connector_version.prerelease
+        )
+
+    def have_same_major_minor_patch(self) -> bool:
+        return (
+            self.master_connector_version.major == self.current_connector_version.major
+            and self.master_connector_version.minor == self.current_connector_version.minor
+            and self.master_connector_version.patch == self.current_connector_version.patch
+        )
+
     def validate(self) -> StepResult:
-        if not self.current_connector_version > self.master_connector_version:
-            return self.failure_result
+        if self.is_version_not_incremented():
+            return self._get_failure_result(
+                (
+                    f"The dockerImageTag in {METADATA_FILE_NAME} was not incremented. "
+                    f"Master version is {self.master_connector_version}, current version is {self.current_connector_version}"
+                )
+            )
+
+        if self.are_both_versions_release_candidates():
+            if not self.have_same_major_minor_patch():
+                return self._get_failure_result(
+                    (
+                        f"Master and current version are release candidates but they have different major, minor or patch versions. "
+                        f"Release candidates should only differ in the prerelease part. Master version is {self.master_connector_version}, "
+                        f"current version is {self.current_connector_version}"
+                    )
+                )
+
         return self.success_result
 
 
@@ -389,11 +428,10 @@ class IncrementalAcceptanceTests(Step):
         return failed_nodes
 
     def _get_master_metadata(self) -> Dict[str, Any]:
-        raw_master_metadata = requests.get(f"{GITHUB_URL_PREFIX_FOR_CONNECTORS}/{self.context.connector.technical_name}/metadata.yaml")
-        master_metadata = yaml.safe_load(raw_master_metadata.text)
-        if not master_metadata:
+        metadata_response = requests.get(f"{GITHUB_URL_PREFIX_FOR_CONNECTORS}/{self.context.connector.technical_name}/metadata.yaml")
+        if not metadata_response.ok:
             raise FileNotFoundError(f"Could not fetch metadata file for {self.context.connector.technical_name} on master.")
-        return master_metadata
+        return yaml.safe_load(metadata_response.text)
 
     async def get_result_log_on_master(self, master_metadata: dict) -> Artifact:
         """Runs acceptance test on the released image of the connector and returns the report log.
@@ -531,6 +569,8 @@ class LiveTests(Step):
             command_options += ["--run-id", self.run_id]
         if self.should_read_with_state:
             command_options += ["--should-read-with-state=1"]
+        if self.disable_proxy:
+            command_options += ["--disable-proxy=1"]
         if self.test_evaluation_mode:
             command_options += ["--test-evaluation-mode", self.test_evaluation_mode]
         if self.selected_streams:
@@ -585,6 +625,7 @@ class LiveTests(Step):
         self.control_version = self.context.run_step_options.get_item_or_default(options, "control-version", None)
         self.target_version = self.context.run_step_options.get_item_or_default(options, "target-version", "dev")
         self.should_read_with_state = "should-read-with-state" in options
+        self.disable_proxy = "disable-proxy" in options
         self.selected_streams = self.context.run_step_options.get_item_or_default(options, "selected-streams", None)
         self.test_evaluation_mode = "strict" if self.context.connector.metadata.get("supportLevel") == "certified" else "diagnostic"
         self.connection_subset = self.context.run_step_options.get_item_or_default(options, "connection-subset", "sandboxes")
@@ -794,7 +835,5 @@ class LiveTests(Step):
                 )
             )
 
-        container = container.with_exec(["poetry", "lock", "--no-update"], use_entrypoint=True).with_exec(
-            ["poetry", "install"], use_entrypoint=True
-        )
+        container = container.with_exec(["poetry", "lock"], use_entrypoint=True).with_exec(["poetry", "install"], use_entrypoint=True)
         return container

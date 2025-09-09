@@ -8,6 +8,7 @@ import io.airbyte.cdk.asProtocolStreamDescriptor
 import io.airbyte.cdk.command.EmptyInputState
 import io.airbyte.cdk.command.GlobalInputState
 import io.airbyte.cdk.command.InputState
+import io.airbyte.cdk.command.OpaqueStateValue
 import io.airbyte.cdk.command.SourceConfiguration
 import io.airbyte.cdk.command.StreamInputState
 import io.airbyte.cdk.data.AirbyteSchemaType
@@ -16,8 +17,10 @@ import io.airbyte.cdk.data.LeafAirbyteSchemaType
 import io.airbyte.cdk.discover.Field
 import io.airbyte.cdk.discover.FieldOrMetaField
 import io.airbyte.cdk.discover.MetaField
+import io.airbyte.cdk.discover.MetaFieldDecorator
 import io.airbyte.cdk.discover.MetadataQuerier
 import io.airbyte.cdk.output.CatalogValidationFailureHandler
+import io.airbyte.cdk.output.DataChannelMedium
 import io.airbyte.cdk.output.FieldNotFound
 import io.airbyte.cdk.output.FieldTypeMismatch
 import io.airbyte.cdk.output.InvalidIncrementalSyncMode
@@ -26,11 +29,13 @@ import io.airbyte.cdk.output.MultipleStreamsFound
 import io.airbyte.cdk.output.OutputConsumer
 import io.airbyte.cdk.output.StreamHasNoFields
 import io.airbyte.cdk.output.StreamNotFound
+import io.airbyte.cdk.output.sockets.DATA_CHANNEL_PROPERTY_PREFIX
 import io.airbyte.protocol.models.v0.AirbyteErrorTraceMessage
 import io.airbyte.protocol.models.v0.AirbyteStream
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteStream
 import io.airbyte.protocol.models.v0.SyncMode
+import io.micronaut.context.annotation.Value
 import jakarta.inject.Singleton
 
 /**
@@ -40,8 +45,10 @@ import jakarta.inject.Singleton
 @Singleton
 class StateManagerFactory(
     val metadataQuerierFactory: MetadataQuerier.Factory<SourceConfiguration>,
+    val metaFieldDecorator: MetaFieldDecorator,
     val outputConsumer: OutputConsumer,
     val handler: CatalogValidationFailureHandler,
+    @Value("\${${DATA_CHANNEL_PROPERTY_PREFIX}.medium}") val dataChannelMedium: String,
 ) {
     /** Generates a [StateManager] instance based on the provided inputs. */
     fun create(
@@ -71,22 +78,42 @@ class StateManagerFactory(
     }
 
     private fun forGlobal(
-        streams: List<Stream>,
+        undecoratedStreams: List<Stream>,
         inputState: GlobalInputState? = null,
-    ) =
-        StateManager(
-            global =
-                Global(streams.filter { it.configuredSyncMode == ConfiguredSyncMode.INCREMENTAL }),
+    ): StateManager {
+        val decoratedStreams: List<Stream> =
+            undecoratedStreams.map { stream: Stream ->
+                when (stream.configuredSyncMode) {
+                    ConfiguredSyncMode.INCREMENTAL ->
+                        stream.copy(schema = stream.schema + metaFieldDecorator.globalMetaFields)
+                    ConfiguredSyncMode.FULL_REFRESH ->
+                        when (DataChannelMedium.valueOf(dataChannelMedium)) {
+                            // Because socket protobuf mode is using a sorted list of fields
+                            // Without including field id's we need to always send the full
+                            // set of fields as in the schema so sorting is maintained.
+                            DataChannelMedium.SOCKET ->
+                                stream.copy(
+                                    schema = stream.schema + metaFieldDecorator.globalMetaFields
+                                )
+                            DataChannelMedium.STDIO -> stream
+                        }
+                }
+            }
+        val globalStreams: List<Stream> =
+            decoratedStreams.filter { it.configuredSyncMode == ConfiguredSyncMode.INCREMENTAL }
+        val initialStreamStates: Map<Stream, OpaqueStateValue?> =
+            decoratedStreams.associateWith { stream: Stream ->
+                when (stream.configuredSyncMode) {
+                    ConfiguredSyncMode.INCREMENTAL -> inputState?.globalStreams?.get(stream.id)
+                    ConfiguredSyncMode.FULL_REFRESH -> inputState?.nonGlobalStreams?.get(stream.id)
+                }
+            }
+        return StateManager(
+            global = Global(globalStreams),
             initialGlobalState = inputState?.global,
-            initialStreamStates =
-                streams.associateWith { stream: Stream ->
-                    when (stream.configuredSyncMode) {
-                        ConfiguredSyncMode.INCREMENTAL -> inputState?.globalStreams?.get(stream.id)
-                        ConfiguredSyncMode.FULL_REFRESH ->
-                            inputState?.nonGlobalStreams?.get(stream.id)
-                    }
-                },
+            initialStreamStates = initialStreamStates,
         )
+    }
 
     private fun forStream(
         streams: List<Stream>,
@@ -197,13 +224,12 @@ class StateManagerFactory(
             if (cursorColumnIDComponents.isEmpty()) {
                 return null
             }
-
             val cursorColumnID: String = cursorColumnIDComponents.joinToString(separator = ".")
-            val maybeCursorField: FieldOrMetaField? =
-                metadataQuerier.commonCursorOrNull(cursorColumnID)
-            return maybeCursorField ?: dataColumnOrNull(cursorColumnID)
+            if (cursorColumnID == metaFieldDecorator.globalCursor?.id) {
+                return metaFieldDecorator.globalCursor
+            }
+            return dataColumnOrNull(cursorColumnID)
         }
-
         val configuredPrimaryKey: List<Field>? =
             configuredStream.primaryKey?.asSequence()?.let { pkOrNull(it.toList()) }
         val configuredCursor: FieldOrMetaField? =
@@ -221,7 +247,7 @@ class StateManagerFactory(
             }
         return Stream(
             streamID,
-            streamFields,
+            streamFields.toSet(),
             configuredSyncMode,
             configuredPrimaryKey,
             configuredCursor,
